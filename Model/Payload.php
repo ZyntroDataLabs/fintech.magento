@@ -55,7 +55,7 @@ class Payload
             }
             $payload['bankTransferCountryCode'] = $country;
         }
-        if ($method === 'ECHECK') {
+        if (in_array($method, ['ECHECK', 'CREDIT_CARD'], true)) {
             $street = $address->getStreet();
             $payload['address'] = [
                 'addressLine1' => trim((string)($street[0] ?? '')),
@@ -65,20 +65,26 @@ class Payload
                 'city' => (string)$address->getCity(),
                 'zipCode' => (string)$address->getPostcode()
             ];
-            foreach (['addressLine1', 'country', 'stateProvince', 'city', 'zipCode'] as $field) {
-                if (trim($payload['address'][$field]) === '') {
-                    throw new LocalizedException(__('Complete your billing address for E-Check.'));
+            if ($method === 'CREDIT_CARD') {
+                $payload['address']['country'] = strtoupper(trim($payload['address']['country']));
+                if ($payload['address']['country'] !== 'US') {
+                    throw new LocalizedException(__('Credit Card is available for US customers only.'));
                 }
             }
+            foreach (['addressLine1', 'country', 'stateProvince', 'city', 'zipCode'] as $field) {
+                if (trim($payload['address'][$field]) === '') {
+                    throw new LocalizedException($method === 'CREDIT_CARD'
+                        ? __('Complete the billing address associated with your credit card.')
+                        : __('Complete your billing address for E-Check.'));
+                }
+            }
+        }
+        if ($method === 'ECHECK') {
             // Magento location IDs do not identify Zyntrodata location rows.
             $payload['hostedEcheck'] = true;
             $payload['returnUrl'] = $this->config->hostedReturnUrl($order);
         }
         if ($method === 'CREDIT_CARD') {
-            $payload['address'] = ['country' => strtoupper(trim((string)$address->getCountryId()))];
-            if ($payload['address']['country'] !== 'US') {
-                throw new LocalizedException(__('Credit Card is available for US customers only.'));
-            }
             if (($option['processingProvider'] ?? '') === 'NMI'
                 && (strlen('CC-' . $invoice) > 255 || round($amount, 2) != $amount)) {
                 throw new LocalizedException(__('The order amount or invoice number is not valid for this card option.'));
